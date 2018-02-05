@@ -1,0 +1,130 @@
+#include <reg52.h>
+#include <intrins.h>
+#include <CommonFunction\thecar.h>
+
+#define uchar unsigned char
+#define uint unsigned int
+uchar tmp;
+uint c=0;
+sbit led1=P1^0;		    //指示灯0
+sbit led2=P1^1;		    //指示灯1
+sbit led3=P1^2;		    //指示灯3
+
+sbit led7=P1^7;		    //指示灯4
+sbit du=P2^6;
+sbit we=P2^7;
+uchar code table[]={ 
+ 
+                0x3F,  //"0"
+                0x06,  //"1"
+                0x5B,  //"2"
+                0x4F,  //"3"
+                0x66,  //"4"
+                0x6D,  //"5"
+                0x7D,  //"6"
+                0x07,  //"7"
+                0x7F,  //"8"
+                0x6F,  //"9"
+                0x77,  //"A"
+                0x7C,  //"B"
+                0x39,  //"C"
+                0x5E,  //"D"
+                0x79,  //"E"
+                0x71,  //"F"
+                         };
+
+//ms延时
+void delay1(uint z) 
+{
+	uint x,y;
+	for(x=z;x>0;x--)
+		for(y=120;y>0;y--);	
+}
+
+//接收数据显示
+void display(uchar value)
+{
+        uchar shu1,value1;
+	value1=value-48;
+	shu1=value1%16;
+
+	dula=1;
+	P0=table[shu1];
+	dula=0;
+	P0=0xff;
+	wela=1;
+	P0=0xfe;
+	wela=0;
+	delay1(1);
+}	
+	  
+void init();   //串口初始化
+void ctrl(); //接收处理函数
+
+void main()
+{
+	init();
+        while(1)
+        {         
+             display(SBUF);
+	     if(RI==1)            // 是否有数据到来
+             {
+                  RI = 0;
+		  ctrl();         //控制函数 
+	      }       
+        }
+}
+
+//串口初始化,蓝牙模块就是通过UART串口通讯的
+void init()	
+{
+ 	ES=0;	          //关中断
+	SCON = 0x50;      // REN=1允许串行接受状态，串口工作模式1,
+			  //10位UART（1位起始位，8位数据位，1位停止位，无奇偶校验），波特率可变
+
+	TMOD = 0x20;      // 定时器1工作于方式2，8位自动重载模式, 用于产生波特率
+        TH1=TL1=0xFD;     // 波特率9600 （本次测试采用晶振为11.0592）
+          
+        PCON &= 0x7f;     // 波特率不倍增
+        TR1 = 1;	  //定时器1开始工作，产生波特率
+			  
+	TI=0;		  //发送标志位置0
+	RI=0;             //接收标志位置0
+		  
+	//EA=0;
+	ES=1;
+ }
+ 
+//接收处理函数  
+void ctrl()		            
+{
+	switch(tmp)
+	{
+		case '1':
+		   led1=1;		//收到字符1，指示灯0灭
+		   forword();           //前进
+		   break;					
+		case '2':		//收到字符2，指示灯1灭
+		   led2=1; 
+		   backward();          //后退
+		   break;
+		case '3':		//收到字符3，指示灯0、1亮
+		   led1=0;
+		   led2=0;
+		   left_run();          //左转
+		   break;
+		case '4':		//收到字符4，指示灯0、1灭
+		   led1=1;
+		   led2=1;
+		   right_run();         //右转
+		   break;
+		case '5':		//收到字符5，指示灯3亮
+		   led3=0;
+		   stop();              //停止
+		   break;
+		default:                //其他，灯全灭
+		   led1=1;
+		   led2=1;
+		   led3=1;
+	}
+}

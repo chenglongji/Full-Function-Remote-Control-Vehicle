@@ -1,0 +1,142 @@
+#include <intrins.h>   
+#include <CommonFunction\thecar.h>
+
+sbit RX = P2^0;//ECHO超声波模块回响端
+sbit TX = P2^1;//TRIG超声波模块触发端
+
+unsigned char pwm_left_val = 100;//左电机占空比值 取值范围0-170，0最快
+unsigned char pwm_right_val = 110;//右电机占空比值取值范围0-170 ,0最快
+unsigned char pwm_t;//周期
+
+unsigned int  time = 0;//传输时间
+unsigned long S = 0;//距离
+bit      flag = 0;//超出测量范围标志位
+
+void StartModule(void);
+void keyscan(void);
+void Avoid(void);
+
+void delay(unsigned int z)//毫秒级延时
+{
+	unsigned int x,y;
+	for(x = z; x > 0; x--)
+		for(y = 114; y > 0 ; y--);
+}
+
+void Delay10us(unsigned char i)    	//10us延时函数 启动超声波模块时使用
+{ 
+   unsigned char j; 
+	do{ 
+		j = 10; 
+		do{ 
+			_nop_(); 
+		}while(--j); 
+	}while(--i); 
+}
+ 
+void main()
+{
+
+	delay(5);//延时片刻
+
+	keyscan();//等待按下S2启动小车
+	delay(1000);//延时1秒
+	TMOD |= 0x20;//定时器1工作模式2,8位自动重装。用于产生PWM
+	TMOD |= 0x01;//定时器0工作模块1,16位定时模式。T0用测ECH0脉冲长度
+	TH1 = 220; //
+	TL1 = 220; //100HZ T1
+	TH0 = 0;
+        TL0 = 0;//T0,16位定时计数用于记录ECHO高电平时间         
+        ET1 = 1;//允许T1中断
+	ET0 = 1;//允许T0中断
+	TR1 = 1;//启动定时器1
+	EA  = 1;//启动总中断
+	
+	while(1)
+	{
+		 StartModule();	       //启动模块测距
+		 while(!RX);		//当RX（ECHO信号回响）为零时等待
+		 TR0=1;			//开启计数
+		 while(RX);	        //当RX为1计数并等待
+		 TR0=0;			//关闭计数
+		 Avoid();		//避障
+		 delay(65);		//测试周期不低于60MS		  
+	}
+}
+
+/*定时器T0中断*/
+void timer0() interrupt 1	//T0中断用来计数器溢出,超过测距范围
+{
+	flag=1;			//中断溢出标志			 
+}
+
+/*定时器1中断输出PWM信号*/
+void timer1() interrupt 3
+{
+	pwm_t++;//周期计时加
+	if(pwm_t == 255)
+		pwm_t = EN1 = EN2 = 0;
+	if(pwm_left_val == pwm_t)//左电机占空比	
+		EN1 = 1;		
+	if(pwm_right_val == pwm_t)//右电机占空比
+		EN2 = 1;			 
+}
+
+/************************   函数  *********************************************/
+void  StartModule() 		         //启动超声波模块
+{
+	  TX=1;			                     //启动一次模块
+      Delay10us(2);
+	  TX=0;
+}
+	
+/*判断S2是否被按下*/
+void keyscan()
+{
+	for(;;)	//死循环
+	{
+		if(key_s2 == 0)// 实时检测S2按键是否被按下
+		{
+			delay(5); //软件消抖
+			if(key_s2 == 0)//再检测S2是否被按下
+			{
+				while(!key_s2);//松手检测
+				beep = 0;	//使能有源蜂鸣器
+				delay(200);//200毫秒延时
+				beep = 1;	//关闭有源蜂鸣器
+				break;		//退出FOR死循环
+			}
+		}
+	}	
+}
+
+
+/*超声波避障*/
+void Avoid()
+{
+	if(S < 400)//设置避障距离 ，单位毫米	刹车距离
+	{
+		beep = 0;//使能蜂鸣器
+		stop();//停车
+		backward();//后退
+		delay(100);//后退时间越长、距离越远。后退是为了留出车辆转向的空间
+		do{
+			left_rapidly();//高速左转
+			delay(90);     //时间越长 转向角度越大，与实际行驶环境有关
+			stop();        //停车
+			delay(100);    //时间越长 停止时间越久长
+
+			StartModule();	//启动模块测距，再次判断是否
+			while(!RX);     //当RX（ECHO信号回响）为零时等待
+			TR0=1;          //开启计数
+			while(RX);	//当RX为1计数并等待
+			TR0=0;		//关闭计数
+			Conut();	//计算距离
+			}while(S < 280);//判断前面障碍物距离
+		beep = 1;//关闭蜂鸣器
+	}
+	else
+	{
+		forward();//前进
+	}	
+}
